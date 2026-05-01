@@ -26,13 +26,14 @@ int spawn_service(int index) {
     }
     else if(pid == 0) // Proceso HIJO
     {
-        apply_resource_limits(DEFAULT_MEM_LIMIT); 
+        apply_resource_limits(dashboard[index].mem_limit); 
 
         char *service_path = dashboard[index].path;//rutas de los servicios (0 = logger, 1 = chaos, 2 = leak)
-        //el segundo argumendo de execl es para pasar argumentos al servicio, pero como no se necesitan, se pasa NULL
-        execl(service_path, (char *)NULL);
+        char *service_name = dashboard[index].name;
+        //hago el casteo para que el segundo argumento de execvp sea un array de char* con el nombre del servicio y un NULL al final(fin de argumentos)
+        execvp(service_path, (char *[]){service_name, NULL});  
 
-        //si execl falla, continua la ejecución de la imagen en la que estaba
+        //si execvp falla, continua la ejecución de la imagen en la que estaba
         perror("Error al ejecutar el servicio");
         exit(EXIT_FAILURE);
     }
