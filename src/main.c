@@ -32,6 +32,35 @@ void print_dashboard() {
 
     // TODO: Renderizar cada fila del dashboard con la información actualizada.
 
+    pthread_mutex_lock(&dashboard_mutex); //para asegurar acceso exclusivo al dashboard 
+
+    for (int i = 0; i < num_services; i++) {
+        service_t *svc = &dashboard[i];
+        const char *state_str;
+
+        switch (svc->state) {
+            case STATE_IDLE:
+                state_str = "IDLE";
+                break;
+            case STATE_RUNNING:
+                state_str = "RUNNING";
+                break;
+            case STATE_CRASHED:
+                state_str = "CRASHED";
+                break;
+            case STATE_KILLED:
+                state_str = "KILLED";
+                break;
+            case STATE_STOPPED:
+                state_str = "STOPPED";
+                break;
+            default:
+                state_str = "UNKNOWN";
+        }
+        printf("%-15s %-10d %-15s %-10d\n", svc->name, svc->pid, state_str, svc->exit_status);
+    }
+    pthread_mutex_unlock(&dashboard_mutex); 
+
     printf("==============================================================\n");
 }
 
@@ -42,8 +71,19 @@ void print_dashboard() {
 void handle_shutdown(int sig) {
     printf("\n[ULA-Cloud] Iniciando secuencia de apagado...\n");
     
-    // TODO: Notificar y limpiar recursos de procesos hijos.
-    
+    // TODO: Notificar y limpiar recursos de procesos hijos. 
+
+    pthread_mutex_lock(&dashboard_mutex);
+    for(int i = 0; i < num_services; i++) 
+    {
+        service_t *svc = &dashboard[i];
+        if (svc->state == STATE_RUNNING) 
+        {
+            printf("[ULA-Cloud] Terminando servicio: %s (PID: %d)\n", svc->name, svc->pid);
+            kill(svc->pid, sig); //señal de terminación
+        }
+    }
+    pthread_mutex_unlock(&dashboard_mutex);
     exit(0);
 }
 
@@ -75,10 +115,25 @@ int main(int argc, char *argv[]) {
     // 4. Activación del ecosistema
     printf("[ULA-Cloud] Inicializando %d microservicios...\n", num_services);
     
-    for (int i = 0; i < num_services; i++) {
+    for (int i = 0; i < num_services; i++) 
+    {
         /* * TODO: Orquestar el despliegue de servicios y su posterior 
          * monitoreo concurrente. 
          */
+
+        if (spawn_service(i) == -1) 
+        {
+            fprintf(stderr, "Error al lanzar el servicio: %s\n", dashboard[i].name);
+        } 
+        //creo el hilo monitor aqui porque necesito pasarle la referencia al servicio específico que acabo de lanzar para que pueda monitorear su estado
+        else if(pthread_create(&dashboard[i].monitor_thread, NULL, monitor_service, (void *)&dashboard[i]) != 0) 
+        {
+            fprintf(stderr, "Error al crear el hilo monitor para el servicio: %s\n", dashboard[i].name);
+        }   
+        else
+        {
+            printf("[ULA-Cloud] Servicio '%s' lanzado con PID: %d\n", dashboard[i].name, dashboard[i].pid);
+        }   
     }
 
     // 5. Ciclo de monitoreo principal
