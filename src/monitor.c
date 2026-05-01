@@ -24,31 +24,40 @@ void* monitor_service(void *arg) {
 
     //le paso como ultimo argumento 0 (porque no hay opciones)
     //si no hay opciones el proceso padre debe esperar a que el proceso hijo termine para continuar con la ejecución del siguiente código 
-    waitpid(svc->pid, &status, 0); 
+    if(waitpid(svc->pid, &status, 0) == -1)
+    {
+      perror("Error al esperar al proceso hijo");
+      return NULL;
+    } 
 
-   if(WIFEXITED(status))
-   {
+    pthread_mutex_lock(&dashboard_mutex);
+    if(WIFEXITED(status))
+    {
+      if(WEXITSTATUS(status) == 0)
+      { 
         //si el proceso terminó normalmente, actualizo el estado a STOPPED y guardo el código de salida
-        pthread_mutex_lock(&dashboard_mutex);
         svc->state = STATE_STOPPED;
-        svc->exit_status = WEXITSTATUS(status);
-        pthread_mutex_unlock(&dashboard_mutex);
-   }
-   else if(WIFSIGNALED(status))
-   {
-        //si el proceso fue terminado por una señal, actualizo el estado a KILLED y guardo la señal que lo mató
-        pthread_mutex_lock(&dashboard_mutex);
-        svc->state = STATE_KILLED;
-        svc->exit_status = WTERMSIG(status);
-        pthread_mutex_unlock(&dashboard_mutex);
-   }
-   else
-   {
-        //en cualquier otro caso, lo marco como CRASHED (puede ser un caso raro pero es para cubrir todas las posibilidades)
-        pthread_mutex_lock(&dashboard_mutex);
+      }
+      else
+      {
+        //si el proceso terminó con un error, actualizo el estado a CRASHED y guardo el código de salida
         svc->state = STATE_CRASHED;
-        pthread_mutex_unlock(&dashboard_mutex);
-   }
+      } 
+      svc->exit_status = WEXITSTATUS(status);
+    }
+    else if(WIFSIGNALED(status))
+    {
+      //si el proceso fue terminado por una señal, actualizo el estado a KILLED y guardo la señal que lo mató
+      svc->state = STATE_KILLED;
+      svc->exit_status = WTERMSIG(status);
+    }
+    else
+    {
+      //en cualquier otro caso, lo marco como CRASHED (puede ser un caso raro pero es para cubrir todas las posibilidades)
+      svc->state = STATE_CRASHED;
+      svc->exit_status = status; 
+    }
+    pthread_mutex_unlock(&dashboard_mutex);
 
     /* * Una vez que waitpid retorna, el proceso hijo ha cambiado de estado.
      * TODO: Analizar el 'status' usando las macros de sys/wait.h:
